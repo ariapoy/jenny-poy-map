@@ -36,3 +36,6 @@ window.INTRO = {
 
 // 結尾字幕
 window.ENDING = { title:'我們的足跡', caption:'我們的旅程，還會繼續走下去。' };
+
+// 配樂：相對於 index.html 的路徑（放在網站資料夾外面，不會進 git）；volume 0–1；fadeOutSec 結尾淡出秒數
+window.BGM = { src: '../配樂/陪著你走 盧冠廷 純音樂 鋼琴版 【附鋼琴譜】 ｜ Piano Cover #68 [aTcamrq0UCM].mp3', volume: 0.9, fadeOutSec: 4 };
