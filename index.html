@@ -35,7 +35,7 @@
   .trail-line.reveal{transition:stroke-opacity 1.6s ease}
 
   /* ---- 圖釘 ---- */
-  .pin{position:absolute;left:0;top:0;pointer-events:none;z-index:900;transform:translate(-50%,-100%);
+  .pin{position:absolute;left:0;top:0;pointer-events:none;z-index:840;transform:translate(-50%,-100%);
        filter:drop-shadow(0 6px 6px rgba(0,0,0,.35));transition:opacity .35s ease;opacity:0}
   .pin.on{opacity:1}
   #pin{width:var(--pin-w)}
@@ -125,7 +125,6 @@
 
 <div id="hud">
   <div class="d" id="hudDate">相識影片</div>
-  <div class="p" id="hudPlace">我們的足跡</div>
 </div>
 <audio id="bgm" preload="auto"></audio>
 <div id="sub" style="opacity:0"></div>
@@ -211,9 +210,12 @@ const chapters = (window.CHAPTERS||[]).map((c,i)=>{
   const lls = ps.map(p=>L.latLng(p.lat,p.plon));
   if (!lls.length && c.at) lls.push(L.latLng(c.at[0], c.at[1] < -30 ? c.at[1]+360 : c.at[1]));
   const bounds = L.latLngBounds(lls);
+  // 上方顯示的日期：chapters.js 的 date 直接當文字用；時間軸位置抓文字裡第一個 YYYY.MM.DD，抓不到就用第一張照片的日期
+  const dateText = (c.date || c.dateLabel || dateRange(ps)).trim();
+  const m = dateText.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  const tlDate = m ? `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` : (ps.length ? ps.map(p=>p.date).sort()[0] : null);
   return Object.assign({}, c, { idx:i, ps, pages: pages.length?pages:[[]], lls, bounds, center: bounds.getCenter(),
-    first: lls[0], last: lls[lls.length-1], date: ps.length ? ps.map(p=>p.date).sort()[0] : null,
-    dateText: c.dateLabel || dateRange(ps), hold: c.hold || 1 });
+    first: lls[0], last: lls[lls.length-1], date: tlDate, dateText, hold: c.hold || 1 });
 }).filter(c=>c.lls.length);
 const INTRO = window.INTRO || null, ENDING = window.ENDING || {title:'我們的足跡', caption:''};
 
@@ -334,8 +336,8 @@ async function clearCards(tok, fade=true){
 function ghostCards(){ cards.forEach(el=>el.classList.add('ghost')); }
 
 /* ---------------- 字卡 / 字幕 / 時間軸 ---------------- */
-const hud={ d:$('#hudDate'), p:$('#hudPlace') }, subEl=$('#sub');
-function hudSet(date, place){ hud.d.textContent=date; hud.p.textContent=place; }
+const hudEl=$('#hud'), hud={ d:$('#hudDate') }, subEl=$('#sub');
+function hudSet(date){ hud.d.textContent=date||''; hudEl.style.opacity = date ? '' : 0; }
 function subSet(text){ subEl.textContent=text||''; subEl.style.opacity = text ? 1 : 0; }
 const tl=$('#tl'), tlDone=$('#tlDone');
 const dated = chapters.filter(c=>c.date);
@@ -417,7 +419,7 @@ async function intro(tok){
   const dest = chapters[0].first, dur = 1900;   // 出發 0.3 s → 走 1.9 s → 會合 0.6 s
   homeView(); await sleep(50, tok);
   const jFrom=L.latLng(INTRO.jenny.from), pFrom=L.latLng(INTRO.poy.from);
-  hudSet(INTRO.jenny.label+' · '+INTRO.poy.label, INTRO.jenny.name+' 與 '+INTRO.poy.name); subSet('');
+  hudSet(''); subSet('');
   pinEl.classList.remove('on'); pinLL=null;
   const trailJ=mkTrail('#d0546e'), trailP=mkTrail('#5f1a2a');
   const put=(el,ll,dx)=>{ const pt=map.latLngToContainerPoint(ll); place(el,pt.x,pt.y,dx); };
@@ -447,7 +449,7 @@ async function playChapter(i, tok, fromChapter){
   const legMs = plan ? Math.max(500, runT0+plan.arrive[i]-performance.now()) : legDuration(pinLL?distKm({lat:pinLL.lat,lon:pinLL.lng},{lat:c.first.lat,lon:c.first.lng}):100)/speed();
   c.ps.forEach(p=>{ const im=new Image(); im.src=`photos/${p.id}.jpg`; });   // 飛行途中先把這章的照片載好
   await clearCards(tok, true);
-  hudSet(c.dateText, c.title); subSet(c.caption);
+  hudSet(c.dateText); subSet('');   // 走路時不顯示字幕，照片彈出後才出現
   pinShow(true);
   // 同一區不重新縮放：下一章的地點都已在目前畫面內、且縮放差不到 2 級，就不動地圖，圖釘直接走過去
   const inView = map.getBounds().pad(-.12).contains(c.bounds), z0=map.getZoom();
@@ -458,11 +460,12 @@ async function playChapter(i, tok, fromChapter){
   cur=i; tlUpdate(i);
   for (let j=0;j<c.pages.length;j++){
     const pg=c.pages[j], slots=slotsFor(pg.length);
-    if (j>0) newTrail();
+    if (j>0){ newTrail(); subSet(''); }
     hotPhotos(pg,true);
     for (let k=0;k<pg.length;k++) await hop([pg[k].lat,pg[k].plon], tok);          // 先把這一頁的地點走完
     trailsFadeAll();                                                                   // 軌跡淡出，同時照片從各自地點彈出
     for (let k=0;k<pg.length;k++){ await popCard(pg[k], slots[k], k, tok); await sleep(120, tok); }
+    await sleep(350, tok); subSet(c.caption);                                          // 照片到位後再顯示字幕
     const holdMs = plan ? Math.max(1000, runT0+plan.pageEnd[i][j]-performance.now()) : dwellMs()*(1+.25*(pg.length-1))/Math.sqrt(speed());
     await sleep(holdMs, tok);
     hotPhotos(pg,false);
@@ -471,7 +474,7 @@ async function playChapter(i, tok, fromChapter){
 }
 async function ending(tok){
   const endMs = plan ? plan.end : 6000/speed();
-  hudSet(dateRange(photos), ENDING.title); subSet(ENDING.caption);
+  hudSet(dateRange(photos)); subSet(ENDING.caption);
   ghostCards(); trailsRevealAll();
   const b=L.latLngBounds(allLatLngs); if (INTRO){ b.extend(INTRO.jenny.from); b.extend(INTRO.poy.from); }
   const sz=map.getSize(), z=map.getBoundsZoom(b.pad(.08), false, L.point(sz.x*.1, sz.y*.1));
