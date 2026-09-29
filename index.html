@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>相識影片 · 地圖時間軸</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="lib/leaflet.css">
+<link rel="stylesheet" href="lib/MarkerCluster.css">
+<link rel="stylesheet" href="lib/maplibre-gl.css">
+<style>
+  :root{
+    --maroon:#7d1f2e; --maroon-2:#a3313f; --gold:#c9a24a; --ink:#1f1a1c;
+    --pin-w:110px;
+    --font:"PingFang TC","Noto Sans TC","Heiti TC","Microsoft JhengHei",system-ui,-apple-system,sans-serif;
+  }
+  html,body{height:100%;margin:0;background:#dfe9ef;font-family:var(--font);color:var(--ink);overflow:hidden}
+  #map{position:absolute;inset:0;cursor:none}
+  #map.show-cursor{cursor:default}
+  .leaflet-container{font-family:var(--font)}
+
+  /* ---- photo markers (Apple Photos style) ---- */
+  .pm{position:relative;width:64px;height:64px;border-radius:14px;background:#fff;
+      box-shadow:0 0 0 3px #fff,0 4px 12px rgba(0,0,0,.35);transition:transform .18s ease,opacity .3s ease;
+      will-change:transform}
+  .pm img{width:100%;height:100%;object-fit:cover;border-radius:12px;display:block}
+  .pm::after{content:"";position:absolute;left:50%;bottom:-9px;width:14px;height:14px;background:#fff;
+      transform:translateX(-50%) rotate(45deg);border-radius:2px;box-shadow:3px 3px 5px rgba(0,0,0,.15)}
+  .pm .cnt{position:absolute;left:4px;bottom:4px;padding:1px 7px;border-radius:9px;background:rgba(20,16,18,.72);
+      color:#fff;font-size:12px;font-weight:700;letter-spacing:.2px;backdrop-filter:blur(3px)}
+  .leaflet-marker-icon:hover .pm,.pm.hot{transform:scale(1.12);z-index:5}
+  .pm.dim{opacity:.18}
+  .leaflet-marker-icon{background:transparent;border:0}
+
+  /* ---- pin cursor ---- */
+  #pin{position:absolute;left:0;top:0;width:var(--pin-w);pointer-events:none;z-index:900;
+       transform:translate(-50%,-100%);filter:drop-shadow(0 6px 6px rgba(0,0,0,.35));
+       transition:opacity .25s ease;opacity:0}
+  #pin.on{opacity:1}
+  #pin img{width:100%;display:block}
+  #pin.walk img{animation:bob .55s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-6px) rotate(2deg)}}
+
+  /* ---- photo card ---- */
+  #card{position:absolute;z-index:850;pointer-events:none;transform-origin:left bottom;opacity:0;
+        transition:opacity .28s ease,transform .32s cubic-bezier(.2,.9,.3,1.2);transform:scale(.85)}
+  #card.on{opacity:1;transform:scale(1)}
+  .fan{position:relative;display:flex;align-items:flex-end;gap:14px}
+  .polaroid{background:#fff;padding:10px 10px 12px;border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.3);
+            transform:rotate(var(--rot,0deg));transition:transform .3s}
+  .polaroid img{display:block;max-width:var(--card-w,340px);max-height:var(--card-h,340px);border-radius:3px;background:#eee}
+  .polaroid .cap{margin-top:8px;font-size:13px;color:#4a3f42;display:flex;justify-content:space-between;gap:10px}
+  .polaroid .cap b{color:var(--maroon);font-weight:700}
+  .grid{background:rgba(255,255,255,.96);padding:10px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.28);
+        display:grid;grid-template-columns:repeat(4,72px);gap:6px}
+  .grid img{width:72px;height:72px;object-fit:cover;border-radius:8px;display:block}
+  .grid .more{width:72px;height:72px;border-radius:8px;background:var(--maroon);color:#fff;display:flex;
+        align-items:center;justify-content:center;font-weight:700;font-size:15px}
+  .grid .gcap{grid-column:1/-1;font-size:13px;color:#4a3f42;padding:2px 2px 0}
+
+  /* ---- HUD ---- */
+  #hud{position:absolute;left:24px;top:22px;z-index:800;pointer-events:none;
+       background:rgba(255,255,255,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+       border-radius:18px;padding:14px 20px 12px;box-shadow:0 6px 24px rgba(0,0,0,.15);min-width:230px;
+       transition:opacity .3s}
+  #hud .d{font-size:34px;font-weight:800;letter-spacing:.5px;color:var(--maroon);line-height:1.1;font-variant-numeric:tabular-nums}
+  #hud .p{font-size:20px;font-weight:600;margin-top:4px}
+  #hud .s{font-size:12px;color:#6b5f62;margin-top:6px}
+  #hud.hud-hidden{opacity:0}
+
+  /* ---- bottom bar ---- */
+  #bar{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:800;width:min(1100px,calc(100% - 48px));
+       background:rgba(255,255,255,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+       border-radius:20px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:12px 18px 10px;cursor:default;
+       transition:opacity .3s,transform .3s}
+  body.hide-ui #bar{opacity:0;transform:translate(-50%,40px);pointer-events:none}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  button,select{font-family:inherit;font-size:14px;border:0;border-radius:10px;padding:7px 12px;background:#efe6e7;color:var(--ink);cursor:pointer}
+  button:hover{background:#e6d6d8}
+  button.primary{background:var(--maroon);color:#fff;font-weight:700;min-width:84px}
+  button.primary:hover{background:var(--maroon-2)}
+  button.on{outline:2px solid var(--maroon)}
+  .sp{flex:1}
+  .hint{font-size:12px;color:#7a6d70}
+  #clock{font-variant-numeric:tabular-nums;color:var(--maroon);font-weight:600;min-width:150px}
+  body.planned .manual-only{display:none}
+  /* timeline */
+  #tl{position:relative;height:46px;margin-top:8px}
+  #tl .track{position:absolute;left:0;right:0;top:14px;height:4px;background:#e2d8da;border-radius:2px}
+  #tl .done{position:absolute;left:0;top:14px;height:4px;background:var(--maroon);border-radius:2px;width:0}
+  #tl .dot{position:absolute;top:10px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--maroon);
+           transform:translateX(-50%);cursor:pointer;box-sizing:border-box;transition:transform .15s}
+  #tl .dot:hover{transform:translateX(-50%) scale(1.35)}
+  #tl .dot.done{background:var(--maroon)}
+  #tl .dot.cur{background:var(--gold);border-color:var(--maroon);transform:translateX(-50%) scale(1.5)}
+  #tl .yr{position:absolute;top:26px;font-size:11px;color:#7a6d70;transform:translateX(-50%);white-space:nowrap}
+  #tl .yr::before{content:"";position:absolute;left:50%;top:-8px;width:1px;height:6px;background:#b9adaf}
+  /* attribution smaller */
+  .leaflet-control-attribution{font-size:10px;opacity:.75}
+  .leaflet-top.leaflet-right{top:18px;right:16px}
+  .leaflet-bar a{cursor:pointer}
+  #help{position:absolute;right:16px;bottom:22px;z-index:800;font-size:12px;color:#5b4f52;background:rgba(255,255,255,.8);
+        padding:8px 12px;border-radius:12px;backdrop-filter:blur(8px);line-height:1.6;display:none;cursor:default}
+  #help.on{display:block}
+  body.hide-ui #help{display:none}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="pin"><img src="pin.png" alt=""></div>
+<div id="card"></div>
+
+<div id="hud">
+  <div class="d" id="hudDate">相識影片</div>
+  <div class="p" id="hudPlace">我們的足跡</div>
+  <div class="s" id="hudSub">按「播放」開始</div>
+</div>
+
+<div id="bar">
+  <div class="row">
+    <button class="primary" id="btnPlay">▶ 播放</button>
+    <button id="btnPrev" title="上一站 (←)">◀︎</button>
+    <button id="btnNext" title="下一站 (→)">▶︎</button>
+    <button id="btnMode" title="切換自動 / 手動 (M)">模式：自動</button>
+    <label class="hint">總長
+      <select id="total"><option value="150">2.5 分鐘</option><option value="180" selected>3 分鐘</option><option value="210">3.5 分鐘</option><option value="240">4 分鐘</option><option value="300">5 分鐘</option><option value="0">手動</option></select>
+    </label>
+    <span class="hint" id="clock">⏱ 0:00 / 3:00</span>
+    <label class="hint manual-only">速度
+      <select id="speed"><option value="0.6">慢</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2.2">快</option></select>
+    </label>
+    <label class="hint manual-only">停留
+      <select id="dwell"><option value="1800">短</option><option value="3000" selected>中</option><option value="4500">長</option></select>
+    </label>
+    <label class="hint">底圖
+      <select id="basemap"><option value="positron">淺色簡潔</option><option value="bright">明亮彩色</option><option value="liberty">Liberty</option><option value="osm">OSM 標準</option><option value="sat">衛星</option></select>
+    </label>
+    <span class="sp"></span>
+    <button id="btnTrail" title="清除軌跡 (C)">清除軌跡</button>
+    <button id="btnOverview" title="縮放到全部 (O)">總覽</button>
+    <button id="btnHide" title="隱藏介面 (H)">隱藏</button>
+    <button id="btnHelp" title="快速鍵">?</button>
+  </div>
+  <div id="tl"><div class="track"></div><div class="done" id="tlDone"></div></div>
+</div>
+<div id="help">
+  <b>快速鍵</b><br>
+  空白鍵 播放/暫停 · ← → 上一站/下一站 · M 自動/手動<br>
+  H 隱藏/顯示介面 · K 隱藏/顯示左上角字卡 · C 清除軌跡 · O 總覽 · B 切換底圖<br>
+  [ ] 縮小/放大圖釘 · - = 縮小/放大照片卡 · Esc 關閉照片卡
+</div>
+
+<script src="lib/leaflet.js"></script>
+<script src="lib/leaflet.markercluster.js"></script>
+<script src="lib/maplibre-gl.js"></script>
+<script src="lib/leaflet-maplibre-gl.js"></script>
+<script src="photos.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const sleep = (ms, tok) => new Promise((res, rej) => {
+  const t = setTimeout(res, ms);
+  if (tok) tok.onCancel(() => { clearTimeout(t); rej(new Error('cancel')); });
+});
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const easeInOut = t => t<.5 ? 2*t*t : -1+(4-2*t)*t;
+const fmtDate = d => d.replace(/-/g,'.');
+
+/* ---------------- data ---------------- */
+// 展示用經度：把美國那段搬到 +360，讓航線越過太平洋、軌跡不會繞地球另一邊。
+const photos = (window.PHOTOS||[]).map(p => Object.assign({}, p, { plon: p.lon < -30 ? p.lon + 360 : p.lon }))
+  .sort((a,b)=>a.id.localeCompare(b.id));
+
+function distKm(a,b){
+  const R=6371, toR=x=>x*Math.PI/180;
+  const dLat=toR(b.lat-a.lat), dLon=toR(b.lon-a.lon);
+  const s=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+// 站點：連續且距離 < 0.6 km 的照片合成一站
+const stops = [];
+for (const p of photos){
+  const last = stops[stops.length-1];
+  if (last && distKm(last, p) < 0.6) { last.photos.push(p); }
+  else stops.push({ lat:p.lat, lon:p.lon, plon:p.plon, date:p.date, place:p.place, photos:[p] });
+}
+// 每站的停留縮放：附近 2 km 內有別站就拉近一點；hold = 這站想停久一點的倍數（photos.js 可設 "hold": 2）
+stops.forEach((s,i)=>{
+  const near = stops.filter((o,j)=>j!==i && distKm(s,o) < 2).length;
+  s.zoom = near ? 15 : 13.6;
+  s.hold = Math.max(1, ...s.photos.map(p => +p.hold || 1));
+});
+
+/* ---------------- 時間預算：把整段播放壓到指定總長 ---------------- */
+// 權重：每站停留 1（多張照片最多 1.7，再乘 hold）；每段移動依距離 0.45–2.6；開場 1.2；結尾 2.6
+let plan = null;
+const travelWeight = km => km<1 ? .45 : km<8 ? .7 : km<60 ? 1 : km<600 ? 1.3 : km<3000 ? 1.9 : 2.6;
+function buildPlan(targetSec){
+  if (!targetSec){ plan = null; return; }
+  const legsW  = stops.slice(1).map((s,i)=> travelWeight(distKm(stops[i], s)));
+  const dwellW = stops.map(s => Math.min(1.7, 1 + .35*(s.photos.length-1)) * s.hold);
+  const introW = 1.2, endW = 2.6, fixed = .12*stops.length + .4;   // 固定開銷：每站到站的小停頓、結尾
+  const sum = a => a.reduce((x,y)=>x+y, 0);
+  let unit = (targetSec - fixed) / (introW + sum(legsW) + sum(dwellW) + endW);
+  const T = w => clamp(w*unit, .55, 7), D = w => clamp(w*unit, .7, 9);
+  for (let k=0; k<5; k++){   // 夾住上下限後重新配平，讓總和仍等於目標
+    const total = fixed + T(introW) + sum(legsW.map(T)) + sum(dwellW.map(D)) + T(endW);
+    unit *= targetSec / total;
+  }
+  const legs = legsW.map(w=>T(w)*1000), dwell = dwellW.map(w=>D(w)*1000);
+  const offsets = []; let acc = T(introW)*1000;            // 每站「到站」時的預定時間
+  stops.forEach((s,i)=>{ if (i>0) acc += legs[i-1]; offsets.push(acc); acc += dwell[i] + 120; });
+  plan = { target: targetSec*1000, intro: T(introW)*1000, legs, dwell, end: T(endW)*1000, offsets, perStop: unit };
+}
+
+/* ---------------- map ---------------- */
+const map = L.map('map', { zoomControl:false, zoomSnap:0, zoomDelta:.5, wheelPxPerZoomLevel:90, minZoom:2, maxZoom:19,
+  worldCopyJump:false, attributionControl:true, inertia:true });
+L.control.zoom({ position:'topright' }).addTo(map);
+
+/* 底圖：預設 OpenFreeMap Positron（淺色、免金鑰、向量），可用 B 鍵或下拉切換 */
+const OFM_ATTR = '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const BASEMAPS = {
+  positron:{ label:'淺色簡潔', type:'gl', style:'https://tiles.openfreemap.org/styles/positron' },
+  bright:  { label:'明亮彩色', type:'gl', style:'https://tiles.openfreemap.org/styles/bright' },
+  liberty: { label:'Liberty', type:'gl', style:'https://tiles.openfreemap.org/styles/liberty' },
+  osm:     { label:'OSM 標準（點陣）', type:'raster', url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom:19, attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' },
+  sat:     { label:'衛星', type:'raster', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom:18, attr:'Tiles &copy; Esri' },
+};
+let baseLayer = null, baseKey = null;
+const POSITRON_TINT = { // 把 Positron 的灰調成接近「照片」App 的暖白 + 淡藍水域 + 淡綠公園
+  'background':'#f6f3ee', 'water':'#b9d7ec', 'waterway':'#a9cbe3', 'park':'#cfe6c6', 'landcover_wood':'#d5e6cc',
+  'landuse_residential':'#efebe4', 'building':'#e6e1d9', 'landcover_ice_shelf':'#f4f6f7', 'landcover_glacier':'#f4f6f7',
+  'road_area_pier':'#f6f3ee', 'road_pier':'#f6f3ee'
+};
+function patchLabels(gl){ // 地名：優先繁體中文，沒有就用當地名稱；並套用暖色調
+  try {
+    const st = gl.getStyle(); if (!st || !st.layers) return;
+    for (const ly of st.layers){
+      if (ly.type === 'symbol' && ly.layout && ly.layout['text-field']){
+        const tf = JSON.stringify(ly.layout['text-field']);
+        if (tf.includes('name')) gl.setLayoutProperty(ly.id, 'text-field', ['coalesce', ['get','name:zh-Hant'], ['get','name']]);
+      }
+      if (baseKey === 'positron' && POSITRON_TINT[ly.id]){
+        const prop = ly.type==='background' ? 'background-color' : ly.type==='line' ? 'line-color' : 'fill-color';
+        gl.setPaintProperty(ly.id, prop, POSITRON_TINT[ly.id]);
+      }
+    }
+  } catch(e){ console.warn('patchLabels', e); }
+}
+function setBasemap(key){
+  const def = BASEMAPS[key]; if (!def || key===baseKey) return;
+  if (baseLayer){ map.removeLayer(baseLayer); baseLayer = null; }
+  baseKey = key;
+  if (def.type === 'gl'){
+    baseLayer = L.maplibreGL({ style: def.style, interactive:false, attribution: OFM_ATTR, updateInterval: 16 }).addTo(map);
+    const gl = baseLayer.getMaplibreMap();
+    gl.on('style.load', ()=> patchLabels(gl));
+    gl.on('error', ev => { console.warn('basemap error', ev && ev.error && ev.error.message); });
+  } else {
+    baseLayer = L.tileLayer(def.url, { maxZoom: def.maxZoom, attribution: def.attr }).addTo(map);
+  }
+  const sel = document.getElementById('basemap'); if (sel && sel.value!==key) sel.value = key;
+}
+
+const allLatLngs = photos.map(p => L.latLng(p.lat, p.plon));
+const twBounds = L.latLngBounds(photos.filter(p=>p.lat>21&&p.lat<26&&p.lon>119&&p.lon<123).map(p=>[p.lat,p.plon]));
+map.fitBounds(twBounds.pad(.15));
+
+/* ---------------- markers ---------------- */
+function iconHtml(rep, count){
+  return `<div class="pm"><img src="thumbs/${rep.id}.jpg" alt="">${count>1?`<span class="cnt">${count}</span>`:''}</div>`;
+}
+const mcg = L.markerClusterGroup({
+  maxClusterRadius: 74, showCoverageOnHover:false, spiderfyOnMaxZoom:false, zoomToBoundsOnClick:true,
+  removeOutsideVisibleBounds:false, animate:true, animateAddingMarkers:false,
+  iconCreateFunction(cluster){
+    const kids = cluster.getAllChildMarkers();
+    const rep = kids.reduce((a,m)=> (!a || m.photo.id > a.id) ? m.photo : a, null);
+    return L.divIcon({ html: iconHtml(rep, kids.length), className:'', iconSize:[64,64], iconAnchor:[32,73] });
+  }
+});
+const markers = photos.map(p => {
+  const m = L.marker([p.lat, p.plon], { icon: L.divIcon({ html: iconHtml(p,1), className:'', iconSize:[64,64], iconAnchor:[32,73] }), riseOnHover:true });
+  m.photo = p; return m;
+});
+mcg.addLayers(markers);
+map.addLayer(mcg);
+
+/* ---------------- trail ---------------- */
+// 軌跡：多段線（切換模式、滑鼠離開再進來時開新一段，避免出現一條直直的接線）
+const trailHalo = L.polyline([[]], { color:'#fff', weight:9, opacity:.85, lineCap:'round', lineJoin:'round' }).addTo(map);
+const trail     = L.polyline([[]], { color:'#8b1e2d', weight:4.5, opacity:.95, lineCap:'round', lineJoin:'round' }).addTo(map);
+let segs = [[]];
+function trailAdd(ll){ segs[segs.length-1].push(ll); trailHalo.addLatLng(ll, trailHalo.getLatLngs()[segs.length-1]); trail.addLatLng(ll, trail.getLatLngs()[segs.length-1]); }
+function trailBreak(){ if (segs[segs.length-1].length===0) return; segs.push([]); trailHalo.setLatLngs(segs.map(s=>s.slice())); trail.setLatLngs(segs.map(s=>s.slice())); }
+function trailClear(){ segs=[[]]; trailHalo.setLatLngs([[]]); trail.setLatLngs([[]]); }
+
+/* ---------------- pin ---------------- */
+const pinEl = $('#pin'), pinImg = pinEl.querySelector('img'), mapEl = $('#map');
+let pinW = 110;
+function setPin(x,y){ pinEl.style.transform = `translate(${x}px,${y}px) translate(-50%,-100%)`; }
+function pinAtLatLng(ll){ const pt = map.latLngToContainerPoint(ll); setPin(pt.x, pt.y); }
+function pinShow(on){ pinEl.classList.toggle('on', on); }
+function pinWalk(on){ pinEl.classList.toggle('walk', on); }
+function setPinW(w){ pinW = clamp(w, 40, 260); document.documentElement.style.setProperty('--pin-w', pinW+'px'); }
+
+/* ---------------- card ---------------- */
+const cardEl = $('#card');
+let cardW = 340;
+function setCardW(w){ cardW = clamp(w, 160, 640); document.documentElement.style.setProperty('--card-w', cardW+'px'); document.documentElement.style.setProperty('--card-h', cardW+'px'); }
+function cardHtml(list, title){
+  if (list.length <= 4){
+    const rots = [-4, 3, -2, 5];
+    return `<div class="fan">${list.map((p,i)=>`<div class="polaroid" style="--rot:${rots[i]}deg"><img src="photos/${p.id}.jpg" alt=""><div class="cap"><b>${fmtDate(p.date)}</b><span>${p.place}</span></div></div>`).join('')}</div>`;
+  }
+  const show = list.slice(0,7), more = list.length-7;
+  const d0 = list[0].date, d1 = list[list.length-1].date;
+  return `<div class="grid">${show.map(p=>`<img src="thumbs/${p.id}.jpg" alt="">`).join('')}${more>0?`<div class="more">+${more}</div>`:''}<div class="gcap"><b>${list.length} 張</b> · ${fmtDate(d0)} – ${fmtDate(d1)}</div></div>`;
+}
+function cardShow(list, anchorPt){
+  cardEl.innerHTML = cardHtml(list);
+  cardEl.classList.add('on');
+  positionCard(anchorPt);
+}
+function positionCard(pt){
+  const W = mapEl.clientWidth;
+  const H = mapEl.clientHeight - (document.body.classList.contains('hide-ui') ? 0 : $('#bar').offsetHeight + 40); // 介面顯示時避開下方控制列
+  // 先放右上方；靠邊就翻到左邊 / 下方
+  cardEl.style.left = '0px'; cardEl.style.top = '0px';
+  const cw = cardEl.offsetWidth, ch = cardEl.offsetHeight;
+  let x = pt.x + 40, y = pt.y - ch - 20;
+  if (x + cw > W - 20) x = pt.x - cw - 40;
+  if (x < 20) x = clamp(pt.x - cw/2, 20, W-cw-20);
+  if (y < 20) y = pt.y + 60;
+  if (y + ch > H - 20) y = clamp(H - ch - 20, 20, H);
+  cardEl.style.left = x+'px'; cardEl.style.top = y+'px';
+}
+function cardHide(){ cardEl.classList.remove('on'); }
+
+/* ---------------- HUD & timeline ---------------- */
+const hud = { d:$('#hudDate'), p:$('#hudPlace'), s:$('#hudSub') };
+function hudSet(date, place, sub){ hud.d.textContent = date; hud.p.textContent = place; hud.s.textContent = sub||''; }
+const tl = $('#tl'), tlDone = $('#tlDone');
+const t0 = new Date(photos[0].date).getTime(), t1 = new Date(photos[photos.length-1].date).getTime();
+const tpos = d => 2 + 96 * ((new Date(d).getTime()-t0)/(t1-t0));  // percent
+stops.forEach((s,i)=>{
+  const el = document.createElement('div'); el.className='dot'; el.style.left = tpos(s.date)+'%';
+  el.title = `${fmtDate(s.date)} ${s.place}`; el.addEventListener('click', ()=> goTo(i)); tl.appendChild(el); s.dot = el;
+});
+{ // 年份刻度
+  const y0 = new Date(photos[0].date).getFullYear(), y1 = new Date(photos[photos.length-1].date).getFullYear();
+  for (let y=y0; y<=y1; y++){ const d=`${y}-01-01`; if (new Date(d).getTime() < t0) continue;
+    const el=document.createElement('div'); el.className='yr'; el.style.left=tpos(d)+'%'; el.textContent=y; tl.appendChild(el); }
+}
+function tlUpdate(cur){
+  stops.forEach((s,i)=>{ s.dot.classList.toggle('done', i<cur); s.dot.classList.toggle('cur', i===cur); });
+  tlDone.style.width = cur>=0 ? tpos(stops[cur].date)+'%' : '0%';
+}
+
+/* ---------------- playback engine ---------------- */
+let mode = 'auto';            // 'auto' | 'manual'
+let playing = false;
+let cur = -1;                 // 目前站
+let token = null;             // 取消用
+function newToken(){ const cbs=[]; return { cancelled:false, onCancel(cb){cbs.push(cb)}, cancel(){ this.cancelled=true; cbs.forEach(f=>f()); } }; }
+const speed = () => parseFloat($('#speed').value);
+const dwellMs = () => parseInt($('#dwell').value,10);
+
+function visibleFor(marker){ return mcg.getVisibleParent(marker) || marker; }
+function dimStop(s, on){
+  s.photos.forEach(p=>{ const m = markers[photos.indexOf(p)]; const v = visibleFor(m); const el = v && v.getElement && v.getElement(); if (el){ const pm = el.querySelector('.pm'); if (pm) pm.classList.toggle('dim', on); } });
+}
+function hotStop(s, on){
+  s.photos.forEach(p=>{ const m = markers[photos.indexOf(p)]; const v = visibleFor(m); const el = v && v.getElement && v.getElement(); if (el){ const pm = el.querySelector('.pm'); if (pm) pm.classList.toggle('hot', on); } });
+}
+
+function isAtStop(i){ // 地圖中心是否仍停在第 i 站（使用者沒拖走、沒按總覽）
+  if (i < 0 || !stops[i]) return false;
+  return map.getCenter().distanceTo(L.latLng(stops[i].lat, stops[i].plon)) < 40;
+}
+function legDuration(km){
+  if (km < 1) return 1300; if (km < 8) return 1900; if (km < 60) return 2600; if (km < 600) return 3600; if (km < 3000) return 5000; return 6500;
+}
+function midZoom(a, b, km){
+  const bz = map.getBoundsZoom(L.latLngBounds([a.lat,a.plon],[b.lat,b.plon]).pad(.6), false);
+  return clamp(Math.min(bz, 12.5), 2.2, 15);
+}
+
+// 從目前地圖中心飛到站點 s，圖釘固定在畫面中心、地圖在腳下滑動，並邊走邊畫軌跡
+async function travelTo(s, tok, drawTrail = true, durMs = null){
+  const from = { lat: map.getCenter().lat, plon: map.getCenter().lng, lon: map.getCenter().lng };
+  const km = distKm({lat:from.lat, lon:((from.lon+540)%360)-180}, s);
+  const zA = map.getZoom(), zB = s.zoom, zM = Math.min(midZoom(from, s, km), zA, zB);
+  const dur = durMs != null ? durMs : legDuration(km) / speed();
+  const pA = map.project([from.lat, from.plon], 0), pB = map.project([s.lat, s.plon], 0);
+  const start = performance.now();
+  pinWalk(true);
+  await new Promise((res, rej) => {
+    let raf;
+    tok.onCancel(()=>{ cancelAnimationFrame(raf); rej(new Error('cancel')); });
+    function frame(now){
+      const t = clamp((now-start)/dur, 0, 1), e = easeInOut(t);
+      const p = L.point(pA.x + (pB.x-pA.x)*e, pA.y + (pB.y-pA.y)*e);
+      const ll = map.unproject(p, 0);
+      const zl = zA + (zB-zA)*e, z = zl + (zM - zl) * Math.sin(Math.PI*t);
+      map.setView(ll, z, { animate:false });
+      const c = map.getSize().divideBy(2); setPin(c.x, c.y);
+      if (drawTrail) trailAdd(ll);
+      if (t < 1) raf = requestAnimationFrame(frame); else res();
+    }
+    raf = requestAnimationFrame(frame);
+  });
+  pinWalk(false);
+}
+
+async function arrive(i, tok){
+  const s = stops[i];
+  cur = i; tlUpdate(i);
+  hudSet(fmtDate(s.date), s.place, `第 ${i+1} 站 / 共 ${stops.length} 站 · ${s.photos.length} 張`);
+  await sleep(120, tok);
+  dimStop(s, true);
+  const c = map.latLngToContainerPoint([s.lat, s.plon]);
+  setPin(c.x, c.y);
+  cardShow(s.photos, c);
+}
+function leave(i){ if (i>=0 && stops[i]){ dimStop(stops[i], false); } cardHide(); }
+
+// 這一段移動要花多久：有時間預算就照計畫（並用「預定到站時刻」吸收累積的延遲）；否則依距離
+let runT0 = 0;   // 計畫時間 0 對應的 performance.now()
+const schedArrive = i => runT0 + plan.offsets[i];
+const schedDepart = i => runT0 + plan.offsets[i] + plan.dwell[i] + 120;
+function legMs(fromIdx, toIdx){
+  if (!plan) return null;
+  if (fromIdx < 0 && toIdx === 0) return Math.max(500, schedArrive(0) - performance.now());
+  if (fromIdx === toIdx-1) return Math.max(500, schedArrive(toIdx) - performance.now());
+  return null;   // 跳站：用預設距離時間
+}
+function dwellFor(i){ return plan ? Math.max(500, schedDepart(i) - performance.now()) : dwellMs()/Math.sqrt(speed()); }
+
+async function runFrom(i){
+  const tok = token = newToken();
+  try {
+    while (i < stops.length && playing && !tok.cancelled){
+      const fromStop = isAtStop(cur);   // 只有從某一站出發才畫軌跡（第一段或從總覽跳過去時不畫）
+      const dur = legMs(cur, i);
+      leave(cur);
+      pinShow(true);
+      await travelTo(stops[i], tok, fromStop, dur);
+      await arrive(i, tok);
+      await sleep(dwellFor(i), tok);
+      i++;
+    }
+    if (i >= stops.length && playing && !tok.cancelled){
+      // 結尾：拉遠看完整軌跡
+      leave(cur); cur = stops.length-1;
+      hudSet('我們的足跡', `${fmtDate(photos[0].date)} – ${fmtDate(photos[photos.length-1].date)}`, `${photos.length} 張照片 · ${stops.length} 站`);
+      const endMs = plan ? plan.end : 5300/speed();
+      map.flyToBounds(L.latLngBounds(allLatLngs).pad(.12), { duration: endMs*.5/1000 });
+      await sleep(endMs, tok);
+      setPlaying(false);
+    }
+  } catch(e){ if (e.message!=='cancel') console.error(e); }
+}
+
+/* 時鐘：顯示已播 / 目標總長 */
+const clockEl = $('#clock');
+let clockBase = 0, clockStart = 0, clockTimer = null;
+const mmss = ms => { const s = Math.max(0, Math.round(ms/1000)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+function clockRender(){
+  const elapsed = clockBase + (playing ? performance.now() - clockStart : 0);
+  const target = plan ? plan.target : null;
+  clockEl.textContent = `⏱ ${mmss(elapsed)}${target ? ' / ' + mmss(target) : ''}${plan ? ` · 每站約 ${plan.perStop.toFixed(1)} 秒` : ''}`;
+}
+function clockStartFrom(i){  // 從第 i 站出發時，時鐘對齊計畫上的時間點
+  clockBase = plan ? (i <= 0 ? 0 : plan.offsets[i-1] + plan.dwell[i-1] + 120) : 0;
+  clockStart = performance.now();
+  runT0 = clockStart - clockBase;
+  clearInterval(clockTimer); clockTimer = setInterval(clockRender, 250); clockRender();
+}
+function clockStop(){ clockBase += performance.now() - clockStart; clearInterval(clockTimer); clockRender(); }
+
+function setPlaying(on){
+  const was = playing;
+  playing = on; $('#btnPlay').textContent = on ? '❚❚ 暫停' : '▶ 播放';
+  if (!on && token) token.cancel();
+  if (!on && was) clockStop();
+}
+function play(){
+  if (mode!=='auto') setMode('auto'); if (playing) return;
+  let next = cur+1;
+  if (next >= stops.length){ next = 0; cur = -1; trailClear(); }   // 播完再按：從頭重播並清掉舊軌跡
+  setPlaying(true); clockStartFrom(next); runFrom(next);
+}
+function pause(){ setPlaying(false); pinWalk(false); }
+async function goTo(i){   // 跳到某站（不自動接續）
+  if (i<0 || i>=stops.length) return;
+  if (mode!=='auto') setMode('auto');
+  const wasPlaying = playing; if (token) token.cancel();
+  playing = true; $('#btnPlay').textContent = '❚❚ 暫停';
+  const tok = token = newToken();
+  try { const fromStop = isAtStop(cur); const dur = (fromStop && wasPlaying) ? legMs(cur, i) : null; leave(cur); pinShow(true); await travelTo(stops[i], tok, fromStop, dur); await arrive(i, tok);
+    if (wasPlaying){ if (plan){ clockBase = plan.offsets[i]; clockStart = performance.now(); runT0 = clockStart - clockBase; } await sleep(dwellFor(i), tok); runFrom(i+1); }
+    else { playing=false; $('#btnPlay').textContent='▶ 播放'; clearInterval(clockTimer); clockRender(); }
+  } catch(e){ if (e.message!=='cancel') console.error(e); }
+}
+
+/* ---------------- manual mode ---------------- */
+let lastMouse = null, hoverTimer = null, sticky = null;
+function setMode(m){
+  if (m === mode) return;
+  mode = m; $('#btnMode').textContent = '模式：' + (m==='auto' ? '自動' : '手動');
+  trailBreak(); lastMouse = null;
+  if (m==='manual'){ pause(); leave(cur); cardHide(); pinWalk(false); hudSet(hud.d.textContent, hud.p.textContent, '手動模式：圖釘跟著滑鼠走'); }
+  else { pinShow(cur>=0); if (cur>=0) pinAtLatLng([stops[cur].lat, stops[cur].plon]); }
+}
+mapEl.addEventListener('mousemove', e => {
+  if (mode!=='manual') return;
+  const r = mapEl.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top;
+  pinShow(true); setPin(x, y);
+  const ll = map.containerPointToLatLng([x,y]);
+  if (!lastMouse || Math.hypot(x-lastMouse.x, y-lastMouse.y) > 4){ trailAdd(ll); lastMouse = {x,y}; }
+  pinWalk(true); clearTimeout(mapEl._walkT); mapEl._walkT = setTimeout(()=>pinWalk(false), 160);
+});
+mapEl.addEventListener('mouseleave', ()=>{ if (mode==='manual'){ pinShow(false); trailBreak(); lastMouse = null; } });
+// 手動模式：滑到照片上就顯示卡片
+function photosOf(layer){ return layer.getAllChildMarkers ? layer.getAllChildMarkers().map(m=>m.photo).sort((a,b)=>a.id.localeCompare(b.id)) : [layer.photo]; }
+function onHover(e){
+  if (mode!=='manual' || sticky) return;
+  clearTimeout(hoverTimer);
+  const pt = map.latLngToContainerPoint(e.layer.getLatLng());
+  cardShow(photosOf(e.layer), pt);
+}
+function onOut(){ if (mode!=='manual' || sticky) return; hoverTimer = setTimeout(cardHide, 350); }
+mcg.on('mouseover', onHover); mcg.on('clustermouseover', onHover);
+mcg.on('mouseout', onOut);   mcg.on('clustermouseout', onOut);
+mcg.on('click', e => { if (mode!=='manual') return; if (sticky===e.layer){ sticky=null; cardHide(); } else { sticky=e.layer; cardShow(photosOf(e.layer), map.latLngToContainerPoint(e.layer.getLatLng())); } });
+map.on('click', ()=>{ if (sticky){ sticky=null; cardHide(); } });
+map.on('move zoom', ()=>{ // 地圖動時，卡片/圖釘跟著站點
+  if (mode==='auto' && cur>=0 && !pinEl.classList.contains('walk')){ const c = map.latLngToContainerPoint([stops[cur].lat, stops[cur].plon]); setPin(c.x,c.y); if (cardEl.classList.contains('on')) positionCard(c); }
+  if (mode==='manual' && sticky){ positionCard(map.latLngToContainerPoint(sticky.getLatLng())); }
+});
+// 自動模式下滑鼠進入地圖：仍隱藏系統游標，避免錄到箭頭
+$('#bar').addEventListener('mouseenter', ()=> mapEl.classList.add('show-cursor'));
+$('#bar').addEventListener('mouseleave', ()=> mapEl.classList.remove('show-cursor'));
+
+/* ---------------- controls ---------------- */
+$('#btnPlay').onclick = ()=> playing ? pause() : play();
+$('#btnNext').onclick = ()=> goTo(Math.min(cur+1, stops.length-1));
+$('#btnPrev').onclick = ()=> goTo(Math.max(cur-1, 0));
+$('#btnMode').onclick = ()=> setMode(mode==='auto' ? 'manual' : 'auto');
+$('#btnTrail').onclick = ()=> trailClear();
+$('#btnOverview').onclick = ()=> { pause(); map.flyToBounds(L.latLngBounds(allLatLngs).pad(.12), {duration:1.6}); };
+$('#btnHide').onclick = ()=> document.body.classList.toggle('hide-ui');
+$('#btnHelp').onclick = ()=> $('#help').classList.toggle('on');
+$('#basemap').onchange = e => setBasemap(e.target.value);
+const BASE_KEYS = Object.keys(BASEMAPS);
+function applyTotal(){
+  const sec = parseInt($('#total').value, 10);
+  buildPlan(sec); document.body.classList.toggle('planned', !!plan); clockRender();
+}
+$('#total').onchange = applyTotal;
+document.querySelectorAll('#bar select').forEach(s => s.addEventListener('change', e => e.target.blur()));
+document.addEventListener('keydown', e => {
+  if (e.target.tagName==='SELECT' && /^(Arrow|Enter| )/.test(e.key)) return;
+  switch(e.key){
+    case ' ': e.preventDefault(); playing ? pause() : play(); break;
+    case 'ArrowRight': goTo(Math.min(cur+1, stops.length-1)); break;
+    case 'ArrowLeft': goTo(Math.max(cur-1, 0)); break;
+    case 'm': case 'M': setMode(mode==='auto'?'manual':'auto'); break;
+    case 'h': case 'H': document.body.classList.toggle('hide-ui'); break;
+    case 'k': case 'K': $('#hud').classList.toggle('hud-hidden'); break;
+    case 'c': case 'C': trailClear(); break;
+    case 'o': case 'O': $('#btnOverview').click(); break;
+    case 'b': case 'B': setBasemap(BASE_KEYS[(BASE_KEYS.indexOf(baseKey)+1) % BASE_KEYS.length]); break;
+    case '[': setPinW(pinW-10); break;
+    case ']': setPinW(pinW+10); break;
+    case '-': setCardW(cardW-30); break;
+    case '=': case '+': setCardW(cardW+30); break;
+    case 'Escape': sticky=null; cardHide(); break;
+  }
+});
+window.addEventListener('resize', ()=>{ if (mode==='auto' && cur>=0){ const c = map.latLngToContainerPoint([stops[cur].lat, stops[cur].plon]); setPin(c.x,c.y); if (cardEl.classList.contains('on')) positionCard(c);} });
+setPinW(pinW); setCardW(cardW);
+setBasemap('positron');
+applyTotal();
+console.log(`photos: ${photos.length}, stops: ${stops.length}`);
+window.__app = { map, stops, photos, goTo, play, pause, setMode, trailClear };
+})();
+</script>
+</body>
+</html>
