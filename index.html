@@ -55,6 +55,7 @@
   .card.on{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(var(--rot,0deg))}
   .card.out{opacity:0;transform:translate(-50%,-50%) scale(.92) rotate(var(--rot,0deg));transition:opacity .4s ease,transform .4s ease}
   .card.ghost{opacity:.18;transition:opacity 1.6s ease}
+  .card.ghost.out{opacity:0;transition:opacity .4s ease,transform .4s ease}
   .polaroid{background:#fff;padding:10px 10px 12px;border-radius:6px;box-shadow:0 12px 34px rgba(0,0,0,.32)}
   .polaroid img{display:block;max-width:var(--cw);max-height:var(--ch);border-radius:3px;background:#eee}
   .polaroid .cap{margin-top:8px;font-size:14px;color:#4a3f42;display:flex;justify-content:space-between;gap:12px}
@@ -218,6 +219,9 @@ const chapters = (window.CHAPTERS||[]).map((c,i)=>{
     first: lls[0], last: lls[lls.length-1], date: tlDate, dateText, hold: c.hold || 1 });
 }).filter(c=>c.lls.length);
 const INTRO = window.INTRO || null, ENDING = window.ENDING || {title:'我們的足跡', caption:''};
+// 結尾收束：ENDING.finale = { photo, date, caption, zoom }，從世界慢慢拉回這張照片的地點（婚禮場地）
+const FINALE = (ENDING.finale && byId[ENDING.finale.photo]) ? Object.assign({ zoom:15.5 }, ENDING.finale, { p: byId[ENDING.finale.photo] }) : null;
+if (ENDING.finale && !FINALE) console.warn('ENDING.finale 指到不存在的照片', ENDING.finale.photo);
 
 /* ---------------- 地圖 ---------------- */
 const map = L.map('map', { zoomControl:false, zoomSnap:0, zoomDelta:.5, wheelPxPerZoomLevel:90, minZoom:2, maxZoom:19, worldCopyJump:false, inertia:true });
@@ -358,18 +362,18 @@ function buildPlan(targetSec){
   if (!targetSec){ plan=null; return; }
   const legsW = chapters.map((c,i)=> i===0 ? 1.0 : travelWeight(distKm({lat:chapters[i-1].last.lat,lon:chapters[i-1].last.lng},{lat:c.first.lat,lon:c.first.lng})));
   const pagesW = chapters.map(c=>c.pages.map(pg=>pageW(pg,c)));
-  const endW = 3.2;
+  const endW = FINALE ? 8.5 : 3.2;   // 有收束段（拉遠→拉回婚禮地點→照片）時結尾要長一點
   const fixed = (INTRO?INTRO_MS/1000:0) + chapters.reduce((a,c)=>a + c.pages.reduce((b,pg)=>b + pg.length*HOP_MS/1000, 0) + (c.pages.length-1)*FADE_MS/1000 + .25, 0);
   const sum=a=>a.reduce((x,y)=>x+y,0), flat=a=>a.flat();
   let unit=(targetSec-fixed)/(sum(legsW)+sum(flat(pagesW))+endW);
-  const T=w=>clamp(w*unit,.6,7), D=w=>clamp(w*unit,.9,12);
-  for (let k=0;k<5;k++){ const total=fixed+sum(legsW.map(T))+sum(flat(pagesW).map(D))+T(endW); unit*=targetSec/total; }
+  const T=w=>clamp(w*unit,.6,7), D=w=>clamp(w*unit,.9,12), E=w=>FINALE?clamp(w*unit,9,20):T(w);   // 結尾收束段至少 9 秒
+  for (let k=0;k<5;k++){ const total=fixed+sum(legsW.map(T))+sum(flat(pagesW).map(D))+E(endW); unit*=targetSec/total; }
   // 時程表：每章到站時刻、每頁停留結束時刻（毫秒，從播放起算）
   let t = (INTRO ? INTRO_MS : 0);
   const arrive=[], pageEnd=[], legs=legsW.map(w=>T(w)*1000);
   chapters.forEach((c,i)=>{ t += legs[i]; arrive.push(t); pageEnd.push([]);
     c.pages.forEach((pg,j)=>{ t += pg.length*HOP_MS + D(pagesW[i][j])*1000; pageEnd[i].push(t); if (j<c.pages.length-1) t += FADE_MS; }); t += 250; });
-  plan={ target:targetSec*1000, legs, arrive, pageEnd, end:T(endW)*1000, unit };
+  plan={ target:targetSec*1000, legs, arrive, pageEnd, end:E(endW)*1000, unit };
 }
 const speed=()=>parseFloat($('#speed').value), dwellMs=()=>parseInt($('#dwell').value,10);
 
@@ -386,16 +390,16 @@ function chapterZoom(c){
 function lerpLL(a,b,e){ const pa=map.project(a,0), pb=map.project(b,0); return map.unproject(L.point(pa.x+(pb.x-pa.x)*e, pa.y+(pb.y-pa.y)*e),0); }
 
 // 飛行：地圖從目前視野移到 (centerTo, zTo)，圖釘同時從目前位置走到 pinDest（畫軌跡）
-async function fly(centerTo, zTo, pinDest, dur, tok, drawTrail=true){
+async function fly(centerTo, zTo, pinDest, dur, tok, drawTrail=true, arc=true){   // arc=false：不做中途縮小，縮放一路平滑（結尾拉回用）
   const c0=map.getCenter(), z0=map.getZoom(), p0=pinLL||c0, p1=L.latLng(pinDest);
-  const zM=Math.min(midZoom(p0,p1), z0, zTo), start=performance.now();
+  const zM=arc ? Math.min(midZoom(p0,p1), z0, zTo) : null, start=performance.now();
   const moving = p0.distanceTo(p1) > 5;
   if (moving) walk(pinEl,true);
   await new Promise((res,rej)=>{
     let id; tok.onCancel(()=>{ cancelAnimationFrame(id); rej(new Error('cancel')); });
     function frame(now){
       const t=clamp((now-start)/dur,0,1), e=easeInOut(t);
-      const zl=z0+(zTo-z0)*e, z = moving ? zl+(zM-zl)*Math.sin(Math.PI*t) : zl;
+      const zl=z0+(zTo-z0)*e, z = (moving && arc) ? zl+(zM-zl)*Math.sin(Math.PI*t) : zl;
       map.setView(lerpLL(c0,centerTo,e), z, {animate:false});
       const pll=lerpLL(p0,p1,e); pinTo(pll); if (drawTrail && moving) trail.add(pll);
       if (t<1) id=requestAnimationFrame(frame); else res();
@@ -473,13 +477,32 @@ async function playChapter(i, tok, fromChapter){
   }
 }
 async function ending(tok){
-  const endMs = plan ? plan.end : 6000/speed();
-  hudSet(dateRange(photos)); subSet(ENDING.caption);
+  // 結尾。沒有 finale：拉遠看全部足跡、停住。有 finale：拉遠看足跡 → 從世界慢慢拉回婚禮地點（圖釘走過去）→ 飯店照片彈出、最後字幕，停到配樂淡出結束
+  const endMs = plan ? Math.max(FINALE?9000:5000, runT0+plan.target-performance.now()) : (FINALE?14000:6000)/speed();
+  const tEnd = performance.now()+endMs;
+  const rest = photos.filter(p=>!FINALE || p!==FINALE.p);
+  hudSet(dateRange(rest)); subSet(ENDING.caption);
   ghostCards(); trailsRevealAll();
-  const b=L.latLngBounds(allLatLngs); if (INTRO){ b.extend(INTRO.jenny.from); b.extend(INTRO.poy.from); }
+  const b=L.latLngBounds(rest.map(p=>L.latLng(p.lat,p.plon))); if (INTRO){ b.extend(INTRO.jenny.from); b.extend(INTRO.poy.from); }
   const sz=map.getSize(), z=map.getBoundsZoom(b.pad(.08), false, L.point(sz.x*.1, sz.y*.1));
-  await fly(b.getCenter(), z, pinLL, endMs*.5, tok, false);
-  await sleep(endMs*.5, tok);
+  if (!FINALE){ await fly(b.getCenter(), z, pinLL, endMs*.5, tok, false); await sleep(endMs*.5, tok); return; }
+  // 1. 拉遠：所有軌跡浮現，看完整足跡
+  await fly(b.getCenter(), z, pinLL, endMs*.18, tok, false);
+  await sleep(endMs*.07, tok);
+  // 2. 拉回：上一章的照片淡掉，圖釘從最後一站走向婚禮地點，地圖從世界一路平滑放大到街區；地點落在畫面左側約 3 成處，右邊留給照片
+  await clearCards(tok, true);
+  const dest=L.latLng(FINALE.p.lat, FINALE.p.plon), zF=FINALE.zoom;
+  const centerTo = map.unproject(map.project(dest, zF).add(L.point(sz.x*.20, 0)), zF);
+  newTrail();
+  const holdMs = Math.max(4000, endMs*.28);   // 最後停在飯店照片上的時間（配樂在這段淡出）
+  await fly(centerTo, zF, dest, Math.max(3000, tEnd-performance.now()-holdMs-450), tok, true, false);
+  // 3. 抵達：婚禮地點的照片從地圖上的位置彈出，換成當天的日期與最後一句字幕
+  hudSet(FINALE.date || fmtDate(FINALE.p.date)); subSet('');
+  hotPhotos([FINALE.p], true);
+  const W=mapEl.clientWidth, H=mapEl.clientHeight;
+  await popCard(FINALE.p, { x:W*.72, y:H*.5, w:W*.50*cardScale, h:H*.84*cardScale }, 0, tok);
+  await sleep(450, tok); subSet(FINALE.caption || ENDING.caption);
+  await sleep(Math.max(1500, tEnd-performance.now()), tok);
 }
 async function runFrom(i){
   const tok = token = newToken();
@@ -619,7 +642,7 @@ document.addEventListener('keydown', e=>{
 window.addEventListener('resize', ()=>{ if (mode==='auto'&&pinLL) pinTo(pinLL); });
 setPinW(pinW); setCardScale(1); setBasemap('liberty'); applyTotal();
 console.log(`photos: ${photos.length}, chapters: ${chapters.length}, pages: ${chapters.reduce((a,c)=>a+c.pages.length,0)}`);
-window.__app={ map, chapters, photos, goTo, play, pause, setMode, trailClearAll, trails, bgm, get plan(){return plan;}, get pinLL(){return pinLL;} };
+window.__app={ map, chapters, photos, goTo, play, pause, setMode, trailClearAll, trails, bgm, get plan(){return plan;}, get pinLL(){return pinLL;}, FINALE };
 })();
 </script>
 </body>

@@ -14,7 +14,7 @@ window.CHAPTERS = [
     photos: ['003']
   },
   {
-    date: '2024.11.09', caption: '登政大後山、貓空，我們的交往紀念日', title: '象山',
+    date: '2024.11.09', caption: '政大貓空，我們的交往紀念日', title: '象山',
     photos: ['077']
   },
   {
@@ -22,12 +22,16 @@ window.CHAPTERS = [
     photos: ['004']
   },
   {
-    date: '2024.12.15', caption: '在台北各地區走透透', title: '臺北',
+    date: '2024 ~ 2025', caption: '在台北各地區走透透', title: '臺北',
     photos: ['005', '006', '007', '008', '013', '014', '018', '019']
   },
   {
-    date: '2025.01.19', caption: '一起過生日、看電影、校園馬拉松', title: '臺北', keepView: true,
-    photos: ['009', '010', '011', '020', '023', '028', '029', '017']
+    date: '2025.01.19', caption: '一起過生日、逛展覽', title: '臺北', keepView: true,
+    photos: ['009', '010', '011', '020']
+  },
+  {
+    date: '2025.01.19', caption: '看電影、校園馬拉松', title: '臺北', keepView: true,
+    photos: ['023', '028', '029', '017']
   },
   {
     date: '2025.02.08', caption: '參加桃園燈節', title: '桃園燈節',
@@ -54,7 +58,7 @@ window.CHAPTERS = [
     photos: ['030', '031']
   },
   {
-    date: '2025.06.13', caption: '第一次一起出國，前往澳洲雪梨', title: '雪梨・藍山',
+    date: '2025.06.13', caption: '第一次一起出國去澳洲雪梨', title: '雪梨・藍山',
     photos: ['032', '033', '034']
   },
   {
@@ -70,7 +74,7 @@ window.CHAPTERS = [
     photos: ['039', '040']
   },
   {
-    date: '2025.07.06', caption: '和重要的媒人～佳霖見面！', title: '古亭',
+    date: '2025.07.06', caption: '和重要的媒人～佳霖見面', title: '古亭',
     photos: ['041']
   },
   {
@@ -86,7 +90,7 @@ window.CHAPTERS = [
     photos: ['066', '067', '068']
   },
   {
-    date: '2026.05.28', caption: '前往猶他州，我們的蜜月開始了！', title: '猶他州',
+    date: '2026.05.28', caption: '前往猶他州，蜜月開始了！', title: '猶他州',
     photos: ['049', '075']
   },
   {
@@ -94,11 +98,11 @@ window.CHAPTERS = [
     photos: ['050', '051', '052', '053', '054', '055']
   },
   {
-    date: '2026.06.04', caption: '前往丹佛、紅石劇場、洛磯山脈', title: '丹佛',
+    date: '2026.06.04', caption: '丹佛、紅石劇場、洛磯山脈', title: '丹佛',
     photos: ['056', '057', '073']
   },
   {
-    date: '2026.06.08', caption: '前往德州、達拉斯、奧斯汀、聖安東尼奧、德州農工大學、休士頓', title: '德州',
+    date: '2026.06.08', caption: '前往達拉斯、奧斯汀、聖安東尼奧、德州農工大學、休士頓', title: '德州',
     photos: ['058', '070', '069', '059', '061', '060']
   },
   {
@@ -113,8 +117,12 @@ window.INTRO = {
   poy: { name: 'Poy', from: [24.7570, 121.7530], label: '宜蘭' },
 };
 
-// 結尾字幕
-window.ENDING = { title: '我們的足跡', caption: '我們的旅程，還會繼續走下去。' };
+// 結尾：先拉遠看全部足跡（caption 是這時的字幕），再從世界慢慢拉回 finale.photo 的地點（婚禮場地），
+// 圖釘走到那裡、照片彈出，上方換成 finale.date、下方換成 finale.caption；zoom 是最後停在飯店時的縮放（越大越近，15–17）
+window.ENDING = {
+  caption: '這是我們一路走來的足跡',
+  finale: { photo: '078', date: '2026.10.03', caption: '今天，我們回到這裡，謝謝你們一起見證', zoom: 15.5 },
+};
 
 // 配樂：相對於 index.html 的路徑（放在網站資料夾外面，不會進 git）；volume 0–1；fadeOutSec 結尾淡出秒數
 window.BGM = { src: '../配樂/陪著你走 盧冠廷 純音樂 鋼琴版 【附鋼琴譜】 ｜ Piano Cover #68 [aTcamrq0UCM].mp3', volume: 0.9, fadeOutSec: 4 };
