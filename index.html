@@ -137,7 +137,7 @@
     <button id="btnNext" title="下一章 (→)">▶︎</button>
     <button id="btnMode" title="切換自動 / 手動 (M)">模式：自動</button>
     <label class="hint">總長
-      <select id="total"><option value="150">2.5 分鐘</option><option value="180" selected>3 分鐘</option><option value="210">3.5 分鐘</option><option value="240">4 分鐘</option><option value="300">5 分鐘</option><option value="0">手動</option></select>
+      <select id="total"><option value="bgm" id="totalBgm">跟配樂一樣長</option><option value="150">2.5 分鐘</option><option value="180" selected>3 分鐘</option><option value="210">3.5 分鐘</option><option value="240">4 分鐘</option><option value="300">5 分鐘</option><option value="0">手動</option></select>
     </label>
     <span class="hint" id="clock">⏱ 0:00 / 3:00</span>
     <label class="hint manual-only">速度
@@ -216,7 +216,7 @@ const chapters = (window.CHAPTERS||[]).map((c,i)=>{
   const m = dateText.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
   const tlDate = m ? `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` : (ps.length ? ps.map(p=>p.date).sort()[0] : null);
   return Object.assign({}, c, { idx:i, ps, pages: pages.length?pages:[[]], lls, bounds, center: bounds.getCenter(),
-    first: lls[0], last: lls[lls.length-1], date: tlDate, dateText, hold: c.hold || 1 });
+    first: lls[0], last: lls[lls.length-1], date: tlDate, dateText, hold: c.hold || 1, minSec: +c.minSec || 0 });
 }).filter(c=>c.lls.length);
 const INTRO = window.INTRO || null, ENDING = window.ENDING || {title:'我們的足跡', caption:''};
 // 結尾收束：ENDING.finale = { photo, date, caption, zoom }，從世界慢慢拉回這張照片的地點（婚禮場地）
@@ -362,17 +362,19 @@ function buildPlan(targetSec){
   if (!targetSec){ plan=null; return; }
   const legsW = chapters.map((c,i)=> i===0 ? 1.0 : travelWeight(distKm({lat:chapters[i-1].last.lat,lon:chapters[i-1].last.lng},{lat:c.first.lat,lon:c.first.lng})));
   const pagesW = chapters.map(c=>c.pages.map(pg=>pageW(pg,c)));
+  const pageMin = chapters.map(c=>c.pages.map(pg=>c.minSec ? c.minSec + pg.length*.12 + .35 : 0));   // 每頁至少停留秒數（chapters.js 的 minSec，照片全部彈出後再算）
   const endW = FINALE ? 8.5 : 3.2;   // 有收束段（拉遠→拉回婚禮地點→照片）時結尾要長一點
   const fixed = (INTRO?INTRO_MS/1000:0) + chapters.reduce((a,c)=>a + c.pages.reduce((b,pg)=>b + pg.length*HOP_MS/1000, 0) + (c.pages.length-1)*FADE_MS/1000 + .25, 0);
   const sum=a=>a.reduce((x,y)=>x+y,0), flat=a=>a.flat();
   let unit=(targetSec-fixed)/(sum(legsW)+sum(flat(pagesW))+endW);
-  const T=w=>clamp(w*unit,.6,7), D=w=>clamp(w*unit,.9,12), E=w=>FINALE?clamp(w*unit,9,20):T(w);   // 結尾收束段至少 9 秒
-  for (let k=0;k<5;k++){ const total=fixed+sum(legsW.map(T))+sum(flat(pagesW).map(D))+E(endW); unit*=targetSec/total; }
+  const T=w=>clamp(w*unit,.6,7), D=(w,m=0)=>Math.max(clamp(w*unit,.9,12), m), E=w=>FINALE?clamp(w*unit,9,20):T(w);   // 結尾收束段至少 9 秒
+  const pagesD=()=>sum(pagesW.map((ws,i)=>sum(ws.map((w,j)=>D(w,pageMin[i][j])))));
+  for (let k=0;k<8;k++){ const total=fixed+sum(legsW.map(T))+pagesD()+E(endW); unit*=targetSec/total; }
   // 時程表：每章到站時刻、每頁停留結束時刻（毫秒，從播放起算）
   let t = (INTRO ? INTRO_MS : 0);
   const arrive=[], pageEnd=[], legs=legsW.map(w=>T(w)*1000);
   chapters.forEach((c,i)=>{ t += legs[i]; arrive.push(t); pageEnd.push([]);
-    c.pages.forEach((pg,j)=>{ t += pg.length*HOP_MS + D(pagesW[i][j])*1000; pageEnd[i].push(t); if (j<c.pages.length-1) t += FADE_MS; }); t += 250; });
+    c.pages.forEach((pg,j)=>{ t += pg.length*HOP_MS + D(pagesW[i][j], pageMin[i][j])*1000; pageEnd[i].push(t); if (j<c.pages.length-1) t += FADE_MS; }); t += 250; });
   plan={ target:targetSec*1000, legs, arrive, pageEnd, end:E(endW)*1000, unit };
 }
 const speed=()=>parseFloat($('#speed').value), dwellMs=()=>parseInt($('#dwell').value,10);
@@ -470,7 +472,7 @@ async function playChapter(i, tok, fromChapter){
     trailsFadeAll();                                                                   // 軌跡淡出，同時照片從各自地點彈出
     for (let k=0;k<pg.length;k++){ await popCard(pg[k], slots[k], k, tok); await sleep(120, tok); }
     await sleep(350, tok); subSet(c.caption);                                          // 照片到位後再顯示字幕
-    const holdMs = plan ? Math.max(1000, runT0+plan.pageEnd[i][j]-performance.now()) : dwellMs()*(1+.25*(pg.length-1))/Math.sqrt(speed());
+    const holdMs = plan ? Math.max(c.minSec*1000||1000, runT0+plan.pageEnd[i][j]-performance.now()) : Math.max(c.minSec*1000, dwellMs()*(1+.25*(pg.length-1))/Math.sqrt(speed()));
     await sleep(holdMs, tok);
     hotPhotos(pg,false);
     if (j<c.pages.length-1) await clearCards(tok, true);
@@ -481,7 +483,9 @@ async function ending(tok){
   const endMs = plan ? Math.max(FINALE?9000:5000, runT0+plan.target-performance.now()) : (FINALE?14000:6000)/speed();
   const tEnd = performance.now()+endMs;
   const rest = photos.filter(p=>!FINALE || p!==FINALE.p);
-  hudSet(dateRange(rest)); subSet(ENDING.caption);
+  const yrs=[...new Set(rest.map(p=>p.date.slice(0,4)))].sort();
+  hudSet(ENDING.date || (yrs.length>1 ? `${yrs[0]}-${yrs[yrs.length-1]}` : yrs[0]||''));   // 拉遠看足跡時的上方文字：ENDING.date，沒寫就用年份範圍
+  subSet(ENDING.caption);
   ghostCards(); trailsRevealAll();
   const b=L.latLngBounds(rest.map(p=>L.latLng(p.lat,p.plon))); if (INTRO){ b.extend(INTRO.jenny.from); b.extend(INTRO.poy.from); }
   const sz=map.getSize(), z=map.getBoundsZoom(b.pad(.08), false, L.point(sz.x*.1, sz.y*.1));
@@ -616,8 +620,12 @@ $('#btnHide').onclick=()=>document.body.classList.toggle('hide-ui');
 $('#btnHelp').onclick=()=>$('#help').classList.toggle('on');
 $('#basemap').onchange=e=>setBasemap(e.target.value);
 const BASE_KEYS=Object.keys(BASEMAPS);
-function applyTotal(){ buildPlan(parseInt($('#total').value,10)); document.body.classList.toggle('planned',!!plan); clockRender(); }
+function totalSec(){ const v=$('#total').value; if (v==='bgm') return (BGM && isFinite(bgm.duration) && bgm.duration>30) ? Math.round(bgm.duration) : 180; return parseInt(v,10); }
+function applyTotal(){ buildPlan(totalSec()); document.body.classList.toggle('planned',!!plan); clockRender(); }
 $('#total').onchange=applyTotal;
+// 有配樂時預設「跟配樂一樣長」：音檔長度讀到後重算時程，結尾淡出剛好落在音樂結束
+if (BGM){ $('#total').value='bgm'; bgm.addEventListener('loadedmetadata', ()=>{ $('#totalBgm').textContent=`跟配樂一樣長（${mmss(bgm.duration*1000)}）`; if ($('#total').value==='bgm') applyTotal(); }); }
+else $('#totalBgm').remove();
 document.querySelectorAll('#bar select').forEach(s=>s.addEventListener('change',e=>e.target.blur()));
 document.addEventListener('keydown', e=>{
   if (e.target.tagName==='SELECT' && /^(Arrow|Enter| )/.test(e.key)) return;

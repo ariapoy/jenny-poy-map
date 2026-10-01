@@ -3,18 +3,18 @@
 //   caption = 下方字幕（圖釘走完、照片彈出後才顯示）
 //   title   = 地點短名（畫面不顯示，只當備註）
 //   photos  = 照片 id，順序＝圖釘走的順序（見 photos.js；每張照片卡右下角的日期與地名也在 photos.js）
-// 可選：hold 讓這章停久一點（倍數）、keepView true/false 強制不縮放／強制飛（不寫就自動判斷）、zoom 覆寫縮放、at:[lat,lon] 沒照片時的落點。
+// 可選：hold 讓這章停久一點（倍數）、minSec 這章每頁照片至少停留幾秒（例如 2）、keepView true/false 強制不縮放／強制飛（不寫就自動判斷）、zoom 覆寫縮放、at:[lat,lon] 沒照片時的落點。
 window.CHAPTERS = [
   {
     date: '2023.06.23', caption: '第一次相遇與互相認識', title: '民生社區・臺大公衛',
     photos: ['001', '002']
   },
   {
-    date: '2024.10.20', caption: '第一次約會登象山', title: '象山',
+    date: '2024.10.20', caption: '第一次約會登象山', title: '象山', minSec: 2,
     photos: ['003']
   },
   {
-    date: '2024.11.09', caption: '政大貓空，我們的交往紀念日', title: '象山',
+    date: '2024.11.09', caption: '政大貓空，我們的交往紀念日', title: '象山', minSec: 2,
     photos: ['077']
   },
   {
@@ -30,7 +30,7 @@ window.CHAPTERS = [
     photos: ['009', '010', '011', '020']
   },
   {
-    date: '2025.01.19', caption: '看電影、校園馬拉松', title: '臺北', keepView: true,
+    date: '2025.03.29', caption: '看電影、校園馬拉松', title: '臺北', keepView: true,
     photos: ['023', '028', '029', '017']
   },
   {
@@ -70,11 +70,11 @@ window.CHAPTERS = [
     photos: ['038']
   },
   {
-    date: '2025.06.28', caption: '訂婚了！兩家人相見歡', title: '訂婚', hold: 1.3,
+    date: '2025.06.28', caption: '訂婚了！兩家人相見歡', title: '訂婚', hold: 1.3, minSec: 2,
     photos: ['039', '040']
   },
   {
-    date: '2025.07.06', caption: '和重要的媒人～佳霖見面', title: '古亭',
+    date: '2025.07.06', caption: '和重要的媒人～佳霖見面', title: '古亭', minSec: 2,
     photos: ['041']
   },
   {
@@ -82,7 +82,7 @@ window.CHAPTERS = [
     photos: ['042', '045', '046']
   },
   {
-    date: '2025.10.03', caption: '我們登記結婚了！', title: '登記結婚', hold: 1.3,
+    date: '2025.10.03', caption: '我們登記結婚了！', title: '登記結婚', hold: 1.3, minSec: 2,
     photos: ['047', '048']
   },
   {
@@ -106,8 +106,12 @@ window.CHAPTERS = [
     photos: ['058', '070', '069', '059', '061', '060']
   },
   {
-    date: '2026.08.15', caption: 'Poy 回國與家人朋友聚餐', title: '回到臺灣',
-    photos: ['062', '063', '064', '065', '071', '076']
+    date: '2026.08.15', caption: 'Poy 回國與朋友聚餐', title: '回到臺灣',
+    photos: ['062', '063', '064', '065']
+  },
+  {
+    date: '2026.08.15', caption: '與家人聚餐', title: '回到臺灣', minSec: 2,
+    photos: ['071', '076']
   },
 ];
 
@@ -117,9 +121,10 @@ window.INTRO = {
   poy: { name: 'Poy', from: [24.7570, 121.7530], label: '宜蘭' },
 };
 
-// 結尾：先拉遠看全部足跡（caption 是這時的字幕），再從世界慢慢拉回 finale.photo 的地點（婚禮場地），
+// 結尾：先拉遠看全部足跡（date 是這時上方的文字、caption 是字幕），再從世界慢慢拉回 finale.photo 的地點（婚禮場地），
 // 圖釘走到那裡、照片彈出，上方換成 finale.date、下方換成 finale.caption；zoom 是最後停在飯店時的縮放（越大越近，15–17）
 window.ENDING = {
+  date: '2023-2026',                    // 拉遠看足跡時上方顯示的文字（不寫就自動用年份範圍）
   caption: '這是我們一路走來的足跡',
   finale: { photo: '078', date: '2026.10.03', caption: '今天，我們回到這裡，謝謝你們一起見證', zoom: 15.5 },
 };
