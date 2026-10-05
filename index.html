@@ -4,18 +4,26 @@
 <meta charset="utf-8">
 <title>相識影片 · 地圖時間軸</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">   <!-- 公開網址給親友看就好，不讓搜尋引擎收錄 -->
 <link rel="stylesheet" href="lib/leaflet.css">
 <link rel="stylesheet" href="lib/MarkerCluster.css">
 <link rel="stylesheet" href="lib/maplibre-gl.css">
 <style>
   :root{
     --maroon:#7d1f2e; --maroon-2:#a3313f; --rose:#d0546e; --gold:#c9a24a; --ink:#1f1a1c;
-    --pin-w:170px; --card-scale:1;
+    --pin-w:170px; --card-scale:1; --text-scale:1;
     --font:"Helvetica Neue","TeX Gyre Heros","PingFang TC","Noto Sans CJK TC","Noto Sans TC","Heiti TC","Microsoft JhengHei",system-ui,-apple-system,sans-serif;   /* iMovie 預設的樣子：英數 Helvetica Neue、中文蘋方；錄影機器上用對應的替代字型 */
   }
   html,body{height:100%;margin:0;background:#dfe9ef;font-family:var(--font);color:var(--ink);overflow:hidden}
   #map{position:absolute;inset:0;cursor:none}
   #map.show-cursor{cursor:default}
+  /* ---- 16:9 錄影模式（R）：畫面固定 16:9、四周黑邊，給 QuickTime 全螢幕錄影用；iMovie 匯入後「裁切填滿」剛好切掉黑邊 ---- */
+  #stage{position:absolute;inset:0;overflow:hidden}
+  body.rec169{background:#000}
+  body.rec169 #stage{inset:auto;background:#dfe9ef}
+  #count{position:absolute;inset:0;z-index:990;display:none;align-items:center;justify-content:center;pointer-events:none;
+         font-size:220px;font-weight:800;color:#fff;text-shadow:0 8px 40px rgba(0,0,0,.5);background:rgba(0,0,0,.25)}
+  #count.on{display:flex}
   .leaflet-container{font-family:var(--font)}
 
   /* ---- 照片縮圖標記（照片 App 風格） ---- */
@@ -71,11 +79,11 @@
   #hud{position:absolute;left:50%;top:22px;transform:translateX(-50%);z-index:950;pointer-events:none;text-align:center;
        background:rgba(255,255,255,.84);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
        border-radius:22px;padding:16px 36px 14px;box-shadow:0 6px 24px rgba(0,0,0,.18);min-width:320px;transition:opacity .4s}
-  #hud .d{font-size:56px;font-weight:800;letter-spacing:.5px;color:var(--maroon);line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #hud .d{font-size:calc(56px*var(--text-scale));font-weight:800;letter-spacing:.5px;color:var(--maroon);line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
   #hud .p{font-size:34px;font-weight:600;margin-top:6px}
   #sub{position:absolute;left:50%;bottom:60px;transform:translateX(-50%);z-index:950;pointer-events:none;
        background:rgba(255,255,255,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-       border-radius:22px;padding:16px 40px;box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:48px;font-weight:700;line-height:1.25;
+       border-radius:22px;padding:16px 40px;box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:calc(48px*var(--text-scale));font-weight:700;line-height:1.25;
        color:var(--ink);text-align:center;max-width:88vw;transition:opacity .4s,bottom .3s}
   body:not(.hide-ui) #sub{bottom:150px}
   body.hud-hidden #hud,body.hud-hidden #sub{opacity:0}
@@ -90,6 +98,7 @@
   button:hover{background:#e6d6d8}
   button.primary{background:var(--maroon);color:#fff;font-weight:700;min-width:84px}
   button.primary:hover{background:var(--maroon-2)}
+  button.active{background:var(--gold);color:#fff;font-weight:700}
   .sp{flex:1}
   .hint{font-size:12px;color:#7a6d70}
   #clock{font-variant-numeric:tabular-nums;color:var(--maroon);font-weight:600;min-width:150px}
@@ -110,9 +119,11 @@
         padding:8px 12px;border-radius:12px;backdrop-filter:blur(8px);line-height:1.6;display:none;cursor:default}
   #help.on{display:block}
   body.hide-ui #help{display:none}
+  body.hide-ui .leaflet-control-zoom{display:none}   /* 錄影時連右上角的 + − 也藏起來（左下角的地圖來源依法要留） */
 </style>
 </head>
 <body>
+<div id="stage">
 <div id="map"></div>
 
 <div id="pinJ" class="pin"><div class="fig"><div class="half"></div></div></div>
@@ -126,6 +137,8 @@
 </div>
 <audio id="bgm" preload="auto"></audio>
 <div id="sub" style="opacity:0"></div>
+<div id="count"></div>
+</div>
 
 <div id="bar">
   <div class="row">
@@ -150,6 +163,7 @@
     <span class="sp"></span>
     <button id="btnTrail" title="清除軌跡 (C)">清除軌跡</button>
     <button id="btnOverview" title="縮放到全部 (O)">總覽</button>
+    <button id="btnRec" title="16:9 錄影模式 (R)：四周黑邊、空白鍵倒數 3 秒再開始">16:9</button>
     <button id="btnHide" title="隱藏介面 (H)">隱藏</button>
     <button id="btnHelp" title="快速鍵">?</button>
   </div>
@@ -159,7 +173,8 @@
   <b>快速鍵</b><br>
   空白鍵 播放/暫停 · ← → 上一章/下一章 · M 自動/手動 · A 配樂開/關<br>
   H 隱藏/顯示控制列 · K 隱藏/顯示字卡與字幕 · C 清除軌跡 · O 總覽 · B 切換底圖<br>
-  [ ] 縮小/放大圖釘 · - = 縮小/放大照片卡 · Esc 關閉照片卡<br>
+  [ ] 縮小/放大圖釘 · - = 縮小/放大照片卡 · , . 縮小/放大文字 · Esc 關閉照片卡<br>
+  R 16:9 錄影模式（四周黑邊、空白鍵倒數 3 秒再開始，給 QuickTime 全螢幕錄影用）<br>
   手動模式：按住左鍵拖曳＝畫軌跡 · 按住 ⌥ Option 拖曳＝移動地圖 · 滾輪＝縮放
 </div>
 
@@ -315,6 +330,8 @@ const halfW = () => pinW/4;   // 單人半寬的一半：會合時 Jenny 在左�
 /* ---------------- 照片卡 ---------------- */
 const cardsEl=$('#cards'); let cards=[]; let cardScale=1;
 function setCardScale(s){ cardScale=clamp(s,.5,1.6); document.documentElement.style.setProperty('--card-scale',cardScale); }
+let textScale=1;   // 日期字卡與字幕的字級倍率（, . 調整，會記住）
+function setTextScale(s){ textScale=clamp(Math.round(s*10)/10,.6,2); document.documentElement.style.setProperty('--text-scale',textScale); try{ localStorage.setItem('textScale',textScale); }catch(e){} }
 function slotsFor(n){ // 卡片中心的畫面比例位置與尺寸
   const W=mapEl.clientWidth, H=mapEl.clientHeight;
   const S=(fx,fy,fw,fh)=>({ x:W*fx, y:H*fy, w:W*fw*cardScale, h:H*fh*cardScale });
@@ -543,7 +560,7 @@ async function runFrom(i){
 
 /* 配樂：播放時同步計畫時間軸，結尾淡出 */
 const bgm=$('#bgm'); const BGM=window.BGM||null; let bgmReady=false;
-if (BGM && BGM.src){ bgm.src = BGM.src.split('/').map(seg => seg==='..'||seg==='.' ? seg : encodeURIComponent(seg)).join('/'); bgm.addEventListener('canplay', ()=>{ bgmReady=true; }); bgm.addEventListener('error', ()=>console.warn('配樂載入失敗', bgm.src)); }
+if (BGM && BGM.src){ bgm.src = BGM.src.split('/').map(seg => seg==='..'||seg==='.' ? seg : encodeURIComponent(seg)).join('/'); bgm.addEventListener('canplay', ()=>{ bgmReady=true; }); bgm.addEventListener('error', ()=>{ console.warn('配樂載入失敗', bgm.src); const o=$('#totalBgm'); if (o) o.textContent=`配樂長度 ${mmss((BGM.seconds||205)*1000)}（這裡沒有音樂檔，靜音播放）`; }); }
 const bgmOn = () => BGM && $('#bgmOn').checked;
 function bgmSync(ms){ if (!BGM) return; try { bgm.currentTime = Math.max(0, ms/1000); } catch(e){} }
 function bgmPlay(){ if (!bgmOn()) return; bgm.volume = BGM.volume ?? .9; bgm.play().catch(()=>{}); }
@@ -641,17 +658,40 @@ $('#btnHide').onclick=()=>document.body.classList.toggle('hide-ui');
 $('#btnHelp').onclick=()=>$('#help').classList.toggle('on');
 $('#basemap').onchange=e=>setBasemap(e.target.value);
 const BASE_KEYS=Object.keys(BASEMAPS);
-function totalSec(){ const v=$('#total').value; if (v==='bgm') return (BGM && isFinite(bgm.duration) && bgm.duration>30) ? Math.round(bgm.duration) : 180; return parseInt(v,10); }
+function totalSec(){ const v=$('#total').value; if (v==='bgm') return (BGM && isFinite(bgm.duration) && bgm.duration>30) ? Math.round(bgm.duration) : ((BGM && BGM.seconds) || 205); return parseInt(v,10); }   // 讀不到音檔（例如放上 GitHub Pages、音樂不公開）就用已知的 3:25，節奏跟影片一樣
 function applyTotal(){ buildPlan(totalSec()); document.body.classList.toggle('planned',!!plan); clockRender(); }
 $('#total').onchange=applyTotal;
 // 有配樂時預設「跟配樂一樣長」：音檔長度讀到後重算時程，結尾淡出剛好落在音樂結束
 if (BGM){ $('#total').value='bgm'; bgm.addEventListener('loadedmetadata', ()=>{ $('#totalBgm').textContent=`跟配樂一樣長（${mmss(bgm.duration*1000)}）`; if ($('#total').value==='bgm') applyTotal(); }); }
 else $('#totalBgm').remove();
 document.querySelectorAll('#bar select').forEach(s=>s.addEventListener('change',e=>e.target.blur()));
+/* ---- 16:9 錄影模式：舞台固定 16:9 置中、四周黑邊；空白鍵從頭播時先倒數 3 秒（iMovie 剪頭時好對齊） ---- */
+const stageEl=$('#stage'), countEl=$('#count');
+function layoutStage(){
+  if (!document.body.classList.contains('rec169')) stageEl.style.cssText='';
+  else { const W=innerWidth, H=innerHeight; let w,h; if (W/H>16/9){ h=H; w=Math.round(h*16/9); } else { w=W; h=Math.round(w*9/16); }
+    stageEl.style.cssText=`left:${Math.round((W-w)/2)}px;top:${Math.round((H-h)/2)}px;width:${w}px;height:${h}px;`; }
+  map.invalidateSize({animate:false}); if (mode==='auto'&&pinLL) pinTo(pinLL);
+}
+function setRec(on){ document.body.classList.toggle('rec169',on); $('#btnRec').classList.toggle('active',on); try{ localStorage.setItem('rec169',on?'1':'0'); }catch(e){} layoutStage(); }
+$('#btnRec').onclick=()=>setRec(!document.body.classList.contains('rec169'));
+let counting=false;
+async function playOrCount(){
+  if (playing||counting) return;
+  if (document.body.classList.contains('rec169') && (cur<0||ended)){
+    counting=true; countEl.classList.add('on');
+    for (const n of [3,2,1]){ countEl.textContent=n; await new Promise(r=>setTimeout(r,1000)); }
+    countEl.classList.remove('on'); countEl.textContent=''; counting=false;
+  }
+  play();
+}
 document.addEventListener('keydown', e=>{
   if (e.target.tagName==='SELECT' && /^(Arrow|Enter| )/.test(e.key)) return;
   switch(e.key){
-    case ' ': e.preventDefault(); playing?pause():play(); break;
+    case ' ': e.preventDefault(); playing?pause():playOrCount(); break;
+    case 'r': case 'R': setRec(!document.body.classList.contains('rec169')); break;
+    case ',': setTextScale(textScale-.1); break;
+    case '.': setTextScale(textScale+.1); break;
     case 'ArrowRight': goTo(Math.min(cur+1,chapters.length-1)); break;
     case 'ArrowLeft': goTo(Math.max(cur-1,0)); break;
     case 'm': case 'M': setMode(mode==='auto'?'manual':'auto'); break;
@@ -668,8 +708,9 @@ document.addEventListener('keydown', e=>{
     case 'Escape': sticky=null; hoverHide(); break;
   }
 });
-window.addEventListener('resize', ()=>{ if (mode==='auto'&&pinLL) pinTo(pinLL); });
+window.addEventListener('resize', ()=>{ if (document.body.classList.contains('rec169')) layoutStage(); else if (mode==='auto'&&pinLL) pinTo(pinLL); });
 setPinW(pinW); setCardScale(1); setBasemap('liberty'); applyTotal();
+try{ const ts=parseFloat(localStorage.getItem('textScale')); if (ts) setTextScale(ts); if (localStorage.getItem('rec169')==='1') setRec(true); }catch(e){}
 console.log(`photos: ${photos.length}, chapters: ${chapters.length}, pages: ${chapters.reduce((a,c)=>a+c.pages.length,0)}`);
 window.__app={ map, chapters, photos, goTo, play, pause, setMode, trailClearAll, trails, bgm, get plan(){return plan;}, get pinLL(){return pinLL;}, FINALE, get gl(){ return (baseLayer && baseLayer.getMaplibreMap) ? baseLayer.getMaplibreMap() : null; },
   setBasemap, dropBasemap(){ if (baseLayer){ map.removeLayer(baseLayer); baseLayer=null; } baseKey=null; }, trailCanvas, mcg, markers };   // 錄影快轉用：先拿掉底圖、快轉完再掛回

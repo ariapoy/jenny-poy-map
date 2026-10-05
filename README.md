@@ -1,6 +1,6 @@
 # Jenny & Poy 相識影片 · 地圖時間軸
 
-用地圖與時間軸呈現我們相識以來的足跡：72 張照片分成 23 章，兩人的琺瑯圖釘先各自從嘉義、宜蘭出發到臺北會合，再一起在地圖上移動、留下軌跡；每到一章，照片從拍攝地點彈到畫面四角，下方顯示這一章的字幕。這個網頁用來螢幕錄影，做成婚禮上播放的相識影片。
+用地圖與時間軸呈現我們相識以來的足跡：78 張照片分成 29 章，兩人的琺瑯圖釘先各自從嘉義、宜蘭出發到臺北會合，再一起在地圖上移動、留下軌跡；每到一章，照片從拍攝地點彈到畫面四角，下方顯示這一章的字幕。這個網頁用來螢幕錄影，做成婚禮上播放的相識影片。
 
 ## 使用
 
@@ -11,7 +11,7 @@
 ```
 index.html      主程式（單一檔案：Leaflet + MarkerCluster + MapLibre GL 底圖）
 chapters.js     章節、字幕、照片分組、開場／結尾設定
-photos.js       72 張照片的資料（日期、地點、座標、座標來源）
+photos.js       78 張照片的資料（日期、地點、座標、座標來源）
 pin.png         去背的兩人圖釘；pin_jenny.png / pin_poy.png 單人圖釘
 photos/         網頁用照片（長邊 1400px）
 thumbs/         地圖縮圖（長邊 320px）
@@ -42,7 +42,7 @@ git push -u origin main
 推上去後到 GitHub → Repository → Settings → Pages → Source 選 `main` branch、`/ (root)`，
 網址會是 https://ariapoy.github.io/jenny-poy-map/ 。
 
-注意：GitHub Pages 是公開網頁，`photos/` 裡的照片任何人拿到網址都能看、能下載。
+注意：GitHub Pages 是公開網頁，`photos/` 裡的照片任何人拿到網址都能看、能下載（`index.html` 已加 noindex，搜尋引擎不會收錄）。配樂 mp3 不在倉庫裡，網頁版會靜音、但節奏仍照 3:25 走。
 
 ## 底圖與授權
 
