@@ -4,3 +4,8 @@
 photos/*.heic
 photos/*.HEIC
 photos/IMG_*
+photos/*.png
+tools/frames/
+tools/node_modules/
+tools/*.log
+tools/*.out
